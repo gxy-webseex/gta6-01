@@ -3,16 +3,79 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
+<link rel="icon" href="data:,">
+<title>Solmar Shores — Open World Crime</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0e2a3f; font-family: "Trebuchet MS", Verdana, sans-serif; }
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+  #cash { position: absolute; top: 14px; left: 16px; font-size: 26px; font-weight: bold; color: #7dff9a; }
+  #city-name { position: absolute; top: 44px; left: 16px; font-size: 13px; letter-spacing: 2px; opacity: .85; }
+  #wanted { position: absolute; top: 14px; right: 16px; font-size: 24px; letter-spacing: 4px; color: #ffd23e; }
+  #wanted-flash { position: absolute; top: 54px; right: 16px; font-size: 26px; font-weight: bold; letter-spacing: 4px; color: #ff4757; opacity: 0; }
+  #wanted-flash.show { animation: wantedflash 1.3s ease-out; }
+  @keyframes wantedflash { 0% { opacity: 0; transform: scale(.85); } 15% { opacity: 1; transform: scale(1.08); } 70% { opacity: 1; } 100% { opacity: 0; transform: scale(1); } }
+  #speed { position: absolute; bottom: 18px; right: 20px; font-size: 30px; font-weight: bold; text-align: right; }
+  #speed small { display: block; font-size: 12px; letter-spacing: 2px; opacity: .8; }
+  #prompt { position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%); font-size: 18px; background: rgba(0,0,0,.55); padding: 8px 16px; border-radius: 6px; display: none; }
+  #hint { position: absolute; bottom: 18px; left: 20px; font-size: 13px; opacity: .8; line-height: 1.5; }
+  #objective { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); max-width: 62vw; font-size: 15px; text-align: center; background: rgba(0,0,0,.55); padding: 7px 16px; border-radius: 6px; display: none; }
+  #minimap { position: absolute; top: 76px; left: 16px; width: 150px; height: 150px; border: 2px solid rgba(255,255,255,.35); border-radius: 8px; background: rgba(4,20,34,.75); }
+  @media (max-width: 700px) {
+    #hint { display: none; }
+    #minimap { width: 110px; height: 110px; top: 70px; }
+    #speed { font-size: 22px; }
+    #objective { font-size: 12px; max-width: 70vw; }
+  }
+  #mute-btn { position: absolute; bottom: 96px; right: 20px; pointer-events: auto; cursor: pointer; font-size: 11px; letter-spacing: 1px; color: #fff; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.4); border-radius: 6px; padding: 5px 10px; }
+  #mute-btn:hover { background: rgba(255,255,255,.18); }
+  #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(6,40,66,.88), rgba(4,20,34,.94)); color: #fff; text-align: center; z-index: 10; }
+  #start h1 { font-size: 56px; margin: 0; letter-spacing: 6px; color: #ffd23e; text-shadow: 0 3px 0 #d35400, 0 6px 18px rgba(0,0,0,.6); }
+  #start h2 { font-size: 17px; font-weight: normal; letter-spacing: 4px; margin: 10px 0 26px; opacity: .9; }
+  #start p { font-size: 15px; line-height: 1.9; margin: 0 0 26px; opacity: .92; }
+  #start p b { color: #7dff9a; }
+  #play-btn { pointer-events: auto; cursor: pointer; font-size: 20px; font-weight: bold; letter-spacing: 2px; color: #08222f; background: #ffd23e; border: none; border-radius: 8px; padding: 14px 42px; box-shadow: 0 4px 0 #b98a00, 0 8px 22px rgba(0,0,0,.5); }
+  #play-btn:hover { background: #ffe066; }
+  #progress { margin-top: 16px; font-size: 14px; color: #7dff9a; }
+  #newgame-btn { pointer-events: auto; cursor: pointer; margin-top: 12px; font-size: 13px; letter-spacing: 1px; color: #fff; background: transparent; border: 1px solid rgba(255,255,255,.5); border-radius: 6px; padding: 7px 18px; display: none; }
+  #newgame-btn:hover { background: rgba(255,255,255,.12); }
+  #start small { margin-top: 18px; font-size: 12px; opacity: .6; }
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 </style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
+<canvas id="scene" aria-label="Solmar Shores: explore a sunny seaside city on foot or by car"></canvas>
+<div id="hud">
+  <div id="cash">$0</div>
+  <div id="city-name">SOLMAR SHORES</div>
+  <div id="wanted">☆☆☆☆☆</div>
+  <div id="wanted-flash">WANTED</div>
+  <div id="speed">0<small>KM/H</small></div>
+  <div id="prompt"></div>
+  <div id="objective"></div>
+  <canvas id="minimap" width="150" height="150"></canvas>
+  <div id="hint">WASD move &nbsp;·&nbsp; Mouse look &nbsp;·&nbsp; SPACE jump &nbsp;·&nbsp; SHIFT run<br>E enter / exit car &nbsp;·&nbsp; M abandon job &nbsp;·&nbsp; 0 mute sound &nbsp;·&nbsp; Arrow keys also turn the camera</div>
+  <button id="mute-btn">SOUND ON</button>
+  <div id="crosshair"></div>
+</div>
+<div id="start">
+  <h1>SOLMAR SHORES</h1>
+  <h2>AN ORIGINAL OPEN-WORLD CRIME GAME</h2>
+  <p>You rolled into Solmar Shores with empty pockets and a busted scooter.<br>
+  Mara Voss — the fixer who runs the marina — has work for anyone fast enough.<br>
+  Run her jobs, earn your name, and don't get caught.<br>
+  <b>WASD</b> move &nbsp;·&nbsp; <b>Mouse</b> look &nbsp;·&nbsp; <b>SPACE</b> jump &nbsp;·&nbsp; <b>SHIFT</b> run<br>
+  <b>E</b> near a parked car to drive it &nbsp;·&nbsp; <b>E</b> again to step out<br>
+  Walk into a <b style="color:#ffd23e">gold beacon</b> to take a job &nbsp;·&nbsp; <b>M</b> abandons a job<br>
+  <b>0</b> mute sound &nbsp;·&nbsp; engine hum, sirens and cash chimes are synthesized live</p>
+  <button id="play-btn">CLICK TO PLAY</button>
+  <div id="progress"></div>
+  <button id="newgame-btn">NEW GAME</button>
+  <small>Best with keyboard and mouse · an original game, no part of any commercial title</small>
+</div>
 <p id="status" role="status" aria-live="polite"></p>
 <script type="module" src="./src/main.js"></script>
 </body>
