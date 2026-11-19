@@ -1,53 +1,91 @@
-// Keyboard and pointer input. Held keys give a steering direction; one-shot presses (start or
-// restart, pause) are queued as bit flags and taken once by the loop, so a press between two
-// frames is never lost and never counted twice.
+// Keyboard + mouse-look input for Solmar Shores. Pointer lock gives the
+// mouse-look; arrow keys turn the camera too, so the game stays playable
+// wherever pointer lock is unavailable (e.g. a headless browser).
+export function createInput(canvas) {
+  const keys = new Set();
+  const freshPresses = new Set(); // one-shot presses, ignores key auto-repeat
+  let yaw = 0; // camera yaw, radians; 0 looks toward -z
+  let pitch = -0.28; // camera pitch, radians (slightly down)
+  let locked = false;
+  let yawDelta = 0;
+  let pitchDelta = 0;
 
-export const ACTION_CONFIRM = 1;
-export const ACTION_PAUSE = 2;
+  const onKey = (e) => {
+    if (e.code === 'Space') e.preventDefault();
+    keys.add(e.code);
+    if (!e.repeat) freshPresses.add(e.code);
+  };
+  const onKeyUp = (e) => keys.delete(e.code);
+  window.addEventListener('keydown', onKey);
+  window.addEventListener('keyup', onKeyUp);
+  window.addEventListener('blur', () => keys.clear());
 
-const LEFT = new Set(['ArrowLeft', 'KeyA']);
-const RIGHT = new Set(['ArrowRight', 'KeyD']);
-const CONFIRM = new Set(['Space', 'Enter']);
-const PAUSE = new Set(['KeyP', 'Escape']);
+  const onMouseMove = (e) => {
+    if (!locked) return;
+    yawDelta -= e.movementX * 0.0026;
+    pitchDelta -= e.movementY * 0.0022;
+  };
+  document.addEventListener('mousemove', onMouseMove);
 
-export function createInput(target) {
-  let left = false;
-  let right = false;
-  let actions = 0;
+  const onLockChange = () => {
+    locked = document.pointerLockElement === canvas;
+  };
+  document.addEventListener('pointerlockchange', onLockChange);
 
-  window.addEventListener('keydown', (event) => {
-    if (LEFT.has(event.code)) left = true;
-    else if (RIGHT.has(event.code)) right = true;
-    else if (CONFIRM.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_CONFIRM;
-    } else if (PAUSE.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_PAUSE;
-    } else return;
-    event.preventDefault();
-  });
-  window.addEventListener('keyup', (event) => {
-    if (LEFT.has(event.code)) left = false;
-    else if (RIGHT.has(event.code)) right = false;
-  });
-  // A key released while the tab is hidden never sends keyup: let go of everything on blur.
-  window.addEventListener('blur', () => {
-    left = false;
-    right = false;
-  });
-  target.addEventListener('pointerdown', () => {
-    actions |= ACTION_CONFIRM;
-  });
+  function requestLock() {
+    if (document.pointerLockElement !== canvas) {
+      try {
+        const p = canvas.requestPointerLock();
+        if (p && p.catch) p.catch(() => { /* headless or denied: arrow keys still work */ });
+      } catch {
+        /* pointer lock unavailable */
+      }
+    }
+  }
+
+  // Apply accumulated mouse deltas and arrow-key turning each frame.
+  function update(dt) {
+    yaw += yawDelta;
+    pitch += pitchDelta;
+    yawDelta = 0;
+    pitchDelta = 0;
+    const turn = 2.4 * dt;
+    if (keys.has('ArrowLeft')) yaw += turn;
+    if (keys.has('ArrowRight')) yaw -= turn;
+    if (keys.has('ArrowUp')) pitch += turn * 0.6;
+    if (keys.has('ArrowDown')) pitch -= turn * 0.6;
+    pitch = Math.max(-1.1, Math.min(0.55, pitch));
+  }
+
+  function axis() {
+    // Forward/strafe in camera space, from WASD.
+    let f = 0;
+    let s = 0;
+    if (keys.has('KeyW')) f += 1;
+    if (keys.has('KeyS')) f -= 1;
+    if (keys.has('KeyD')) s += 1;
+    if (keys.has('KeyA')) s -= 1;
+    return { f, s };
+  }
+
+  function pressed(code) {
+    // One-shot key check: true once per physical press.
+    if (freshPresses.has(code)) {
+      freshPresses.delete(code);
+      return true;
+    }
+    return false;
+  }
 
   return {
-    /** -1 for left, 1 for right, 0 for neither or both. */
-    direction() {
-      return (right ? 1 : 0) - (left ? 1 : 0);
-    },
-    /** The one-shot presses since the last call, as ACTION_* flags. */
-    takeActions() {
-      const taken = actions;
-      actions = 0;
-      return taken;
-    },
+    keys,
+    update,
+    axis,
+    pressed,
+    requestLock,
+    get yaw() { return yaw; },
+    set yaw(v) { yaw = v; },
+    get pitch() { return pitch; },
+    get locked() { return locked; },
   };
 }
